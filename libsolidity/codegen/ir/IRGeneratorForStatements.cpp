@@ -24,6 +24,7 @@
 #include <libsolidity/codegen/YulUtilFunctions.h>
 
 #include <libdevcore/StringUtils.h>
+#include <libdevcore/Whiskers.h>
 
 using namespace std;
 using namespace dev;
@@ -176,6 +177,67 @@ bool IRGeneratorForStatements::visit(FunctionCall const& _functionCall)
 	default:
 		solUnimplemented("");
 	}
+	return false;
+}
+
+// Preliminary implementation that doesn't take care of many things like
+// name collisions etc. Mainly used for test cases.
+bool IRGeneratorForStatements::visit(InlineAssembly const& _inlineAsm)
+{
+	auto const& loc = _inlineAsm.location();
+
+	solAssert(loc.start != 1 && loc.end != -1, "Expected source location");
+	solAssert(!!loc.source, "Expected source location");
+
+	vector<string> params, retParams, args;
+	vector<map<string, string>> assignVars;
+	// Prepare parameters and arguments
+	for (auto const& pair: _inlineAsm.annotation().externalReferences)
+	{
+		auto varDecl = dynamic_cast<VariableDeclaration const*>(pair.second.declaration);
+		solUnimplementedAssert(varDecl, "");
+		solUnimplementedAssert(
+			pair.second.isOffset == false && pair.second.isSlot == false,
+			""
+		);
+
+		args.emplace_back(m_context.variableName(*varDecl));
+		params.emplace_back(varDecl->name());
+		retParams.emplace_back("ret_" + varDecl->name());
+		assignVars.emplace_back(
+			map<string, string>{
+				{"retParam", retParams.back()},
+				{"param", params.back()}
+			}
+		);
+	}
+
+	// Skip the "assembly" literal
+	int blockStart = loc.start + string("assembly").size();
+	solAssert(loc.end > blockStart, "");
+
+	stringstream funcName;
+
+	funcName << "inline$assembly$" << _inlineAsm.id();
+
+	Whiskers inlineAsm(R"(
+		function <funcName> (<params>) -> <retParams> {
+			<asmBlock>
+			<#assignVars><retParam> := <param></assignVars>
+		}
+		<args> := <funcName>(<args>)
+	)");
+
+	inlineAsm
+		("funcName", funcName.str())
+		("params", joinHumanReadable(params))
+		("retParams", joinHumanReadable(retParams))
+		("asmBlock", loc.source->source().substr(blockStart, loc.end - blockStart - 1))
+		("assignVars", assignVars)
+		("args", joinHumanReadable(args));
+
+	m_code << inlineAsm.render();
+
 	return false;
 }
 
