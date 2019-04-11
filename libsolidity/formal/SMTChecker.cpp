@@ -36,7 +36,8 @@ using namespace dev::solidity;
 SMTChecker::SMTChecker(ErrorReporter& _errorReporter, map<h256, string> const& _smtlib2Responses):
 	m_interface(make_shared<smt::SMTPortfolio>(_smtlib2Responses)),
 	m_errorReporterReference(_errorReporter),
-	m_errorReporter(m_smtErrors)
+	m_errorReporter(m_smtErrors),
+	m_context(*m_interface)
 {
 #if defined (HAVE_Z3) || defined (HAVE_CVC4)
 	if (!_smtlib2Responses.empty())
@@ -112,6 +113,7 @@ bool SMTChecker::visit(FunctionDefinition const& _function)
 	if (isRootFunction())
 	{
 		m_interface->reset();
+		m_context.reset();
 		m_pathConditions.clear();
 		m_callStack.clear();
 		m_expressions.clear();
@@ -869,6 +871,21 @@ bool SMTChecker::visit(MemberAccess const& _memberAccess)
 			defineExpr(_memberAccess, enumType->memberValue(_memberAccess.memberName()));
 		}
 		return false;
+	}
+	else if (exprType->category() == Type::Category::Address)
+	{
+		_memberAccess.expression().accept(*this);
+		if (_memberAccess.memberName() == "balance")
+		{
+			defineExpr(_memberAccess, m_context.balance(expr(_memberAccess.expression())));
+			m_uninterpretedTerms.insert(&_memberAccess);
+			return false;
+		}
+		else
+			m_errorReporter.warning(
+				_memberAccess.location(),
+				"Assertion checker does not yet support this address member."
+			);
 	}
 	else
 		m_errorReporter.warning(

@@ -18,6 +18,7 @@
 #pragma once
 
 
+#include <libsolidity/formal/EncodingContext.h>
 #include <libsolidity/formal/SolverInterface.h>
 #include <libsolidity/formal/SymbolicVariables.h>
 
@@ -283,6 +284,7 @@ private:
 	std::unordered_map<Expression const*, std::shared_ptr<SymbolicVariable>> m_expressions;
 	std::unordered_map<VariableDeclaration const*, std::shared_ptr<SymbolicVariable>> m_variables;
 	std::unordered_map<std::string, std::shared_ptr<SymbolicVariable>> m_globalContext;
+
 	/// Stores the instances of an Uninterpreted Function applied to arguments.
 	/// These may be direct application of UFs or Array index access.
 	/// Used to retrieve models.
@@ -314,6 +316,9 @@ private:
 	/// when placeholder is visited.
 	/// Needs to be a stack because of function calls.
 	std::vector<int> m_modifierDepthStack;
+
+	/// Stores the context of the encoding.
+	smt::EncodingContext m_context;
 };
 
 }
