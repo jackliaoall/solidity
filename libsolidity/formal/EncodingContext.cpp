@@ -27,7 +27,12 @@ using namespace dev::solidity::smt;
 EncodingContext::EncodingContext(SolverInterface& _solver):
 	m_solver(_solver)
 {
-	reset();
+	auto sort = make_shared<smt::ArraySort>(
+		make_shared<smt::Sort>(smt::Kind::Int),
+		make_shared<smt::Sort>(smt::Kind::Int)
+	);
+	m_balances = make_unique<SymbolicVariable>(sort, "balances", m_solver);
+	m_thisAddress = make_unique<SymbolicAddressVariable>("this", m_solver);
 }
 
 void EncodingContext::reset()
@@ -37,17 +42,43 @@ void EncodingContext::reset()
 
 void EncodingContext::resetBalances()
 {
-	auto sort = make_shared<smt::ArraySort>(
-		make_shared<smt::Sort>(smt::Kind::Int),
-		make_shared<smt::Sort>(smt::Kind::Int)
-	);
-	m_balances = make_shared<smt::Expression>(m_solver.newVariable("balances", sort));
+	m_balances->increaseIndex();
+	m_thisAddress->increaseIndex();
 }
 
-smt::Expression EncodingContext::balance(smt::Expression _account)
+smt::Expression EncodingContext::balance()
 {
-	auto balance = smt::Expression::select(*m_balances, std::move(_account));
-	auto intType = make_shared<IntegerType>(256);
-	setSymbolicUnknownValue(balance, intType, m_solver);
-	return balance;
+	return balance(m_thisAddress->currentValue());
+}
+
+smt::Expression EncodingContext::balance(smt::Expression _address)
+{
+	return smt::Expression::select(m_balances->currentValue(), move(_address));
+}
+
+void EncodingContext::transfer(smt::Expression _to, smt::Expression _value)
+{
+	unsigned indexBefore = m_balances->index();
+	addBalance(m_thisAddress->currentValue(), 0 - _value);
+	addBalance(_to, move(_value));
+	unsigned indexAfter = m_balances->index();
+	solAssert(indexAfter > indexBefore, "");
+	m_balances->increaseIndex();
+	auto newBalances = smt::Expression::ite(
+		m_thisAddress->currentValue() == move(_to),
+		m_balances->valueAtIndex(indexBefore),
+		m_balances->valueAtIndex(indexAfter)
+	);
+	m_solver.addAssertion(m_balances->currentValue() == newBalances);
+}
+
+void EncodingContext::addBalance(smt::Expression _address, smt::Expression _value)
+{
+	smt::Expression newBalances = smt::Expression::store(
+		m_balances->currentValue(),
+		_address,
+		balance(_address) + move(_value)
+	);
+	m_balances->increaseIndex();
+	m_solver.addAssertion(newBalances == m_balances->currentValue());
 }

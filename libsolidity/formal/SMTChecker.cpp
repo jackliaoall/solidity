@@ -625,6 +625,29 @@ void SMTChecker::endVisit(FunctionCall const& _funCall)
 	case FunctionType::Kind::MulMod:
 		abstractFunctionCall(_funCall);
 		break;
+	case FunctionType::Kind::Send:
+	case FunctionType::Kind::Transfer:
+	{
+		auto const& memberAccess = dynamic_cast<MemberAccess const&>(_funCall.expression());
+		auto const& address = memberAccess.expression();
+		auto const& value = args.at(0);
+		solAssert(value, "");
+
+		addOverflowTarget(
+			OverflowTarget::Type::Overflow,
+			make_shared<IntegerType>(256),
+			m_context.balance(expr(address)) + expr(*value),
+			_funCall.location()
+		);
+
+		smt::Expression thisBalance = m_context.balance();
+		setSymbolicUnknownValue(thisBalance, make_shared<IntegerType>(256), *m_interface);
+		checkCondition(thisBalance < expr(*value), _funCall.location(), "Insufficient funds", "address(this).balance", &thisBalance);
+
+		m_context.transfer(expr(address), expr(*value));
+		createExpr(_funCall);
+		break;
+	}
 	default:
 		m_errorReporter.warning(
 			_funCall.location(),
@@ -878,14 +901,10 @@ bool SMTChecker::visit(MemberAccess const& _memberAccess)
 		if (_memberAccess.memberName() == "balance")
 		{
 			defineExpr(_memberAccess, m_context.balance(expr(_memberAccess.expression())));
+			setSymbolicUnknownValue(*m_expressions[&_memberAccess], *m_interface);
 			m_uninterpretedTerms.insert(&_memberAccess);
 			return false;
 		}
-		else
-			m_errorReporter.warning(
-				_memberAccess.location(),
-				"Assertion checker does not yet support this address member."
-			);
 	}
 	else
 		m_errorReporter.warning(

@@ -18,6 +18,7 @@
 #pragma once
 
 #include <libsolidity/formal/SolverInterface.h>
+#include <libsolidity/formal/SymbolicVariables.h>
 
 namespace dev
 {
@@ -37,14 +38,23 @@ public:
 	/// Resets the entire context.
 	void reset();
 
-	/// @returns the symbolic balance of an account.
-	smt::Expression balance(smt::Expression _account);
+	/// @returns the symbolic balance of address `this`.
+	smt::Expression balance();
+	/// @returns the symbolic balance of an address.
+	smt::Expression balance(smt::Expression _address);
+	/// Transfer _value from `this` to _to.
+	void transfer(smt::Expression _to, smt::Expression _value);
 
 private:
+	/// Resets the symbolic variables related to balances.
 	void resetBalances();
+	/// Adds _value to _account's balance.
+	void addBalance(smt::Expression _account, smt::Expression _value);
 
 	/// Symbolic balances.
-	std::shared_ptr<smt::Expression> m_balances;
+	std::unique_ptr<SymbolicVariable> m_balances;
+	/// Symbolic this address.
+	std::unique_ptr<SymbolicAddressVariable> m_thisAddress;
 
 	SolverInterface& m_solver;
 };
